@@ -217,10 +217,18 @@ const spawned = await client.spawnFork({ title: 'SuperAgent …', env: {…} })
 | 3.1.14 | 3.2.2 | 未接入（直连服务键） |
 | **3.1.15** | **3.2.3** | **1.0.x**（local/http/file/legacy） |
 | 3.2.x | 3.2.x+ | 1.x 向后兼容 |
-| 待接 1.1 | **3.3.1**（M5 回流） | **1.1.x**（+ `fang.relay.*`） |
+| 3.1.35 | **3.3.2**（M5 回流实测） | **1.1.x**（+ `fang.relay.*`；1.1.1 修回执计数） |
 | 4.0 规划 | 4.0 规划 | 2.0（双写迁移） |
 
 ## 9. 变更记录
+
+### 1.1.1（2026-11-13）
+
+- **修复**：`createRelayStore().publish()` 的 `rejected` 计数在“重投已存在的事件”时会变成负数
+  （原实现用 `validated.rejected.length - duplicates`，而 `duplicates` 同时包含已存在重复与批内重复）。
+  现在 `duplicates`（已存在 + 批内）与 `rejected`（仅非法条目）分开累计，回执计数恒为非负。
+  影响面：仅回执字段，事件去重、`accepted`、`cursor` 一直是对的；新增回归测试。
+- 协议、方法表、传输与 1.1.0 完全一致，属 **PATCH**：双方可独立升级。
 
 ### 1.1.0（2026-11-13）
 

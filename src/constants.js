@@ -11,7 +11,7 @@
  */
 
 export const CONTRACT_PACKAGE = '@twinsearth/dsh-fang-contract'
-export const CONTRACT_VERSION = '1.1.0'
+export const CONTRACT_VERSION = '1.1.1'
 export const PROTOCOL = 'fang-master'
 export const PROTOCOL_VERSION = 1
 export const MIN_COMPATIBLE_MAJOR = 1

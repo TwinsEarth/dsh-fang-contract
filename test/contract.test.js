@@ -23,7 +23,7 @@ const server = () => createContractServer({
 })
 
 test('contract: versions and transport order are stable', () => {
-  assert.equal(CONTRACT_VERSION, '1.1.0')
+  assert.equal(CONTRACT_VERSION, '1.1.1')
   assert.deepEqual([...DEFAULT_TRANSPORT_ORDER], ['local', 'http', 'file', 'legacy'])
   assert.deepEqual(parseVersion('1.2.3'), { major: 1, minor: 2, patch: 3, text: '1.2.3' })
   assert.equal(parseVersion('nope'), null)
@@ -306,6 +306,29 @@ test('relay: a 1.0-style server without relay handlers answers unsupported-metho
   assert.equal(attempt.ok, false, 'publishing to a peer without relay must fail loudly')
   assert.equal(attempt.code, ERROR_CODES.ALL_TRANSPORTS_FAILED)
   assert.equal(attempt.failures[0].code, ERROR_CODES.UNSUPPORTED_METHOD, 'the real reason is preserved per transport')
+})
+
+test('relay: replaying a batch reports zero rejected, never a negative count', () => {
+  const store = createRelayStore({ peerLabel: 'x' })
+  const events = [{ id: 'a', type: 'cost:event' }, { id: 'b', type: 'cost:event' }]
+  const first = store.publish({ batchId: 'b', events })
+  assert.equal(first.accepted, 2)
+  assert.equal(first.duplicates, 0)
+  assert.equal(first.rejected, 0)
+
+  const second = store.publish({ batchId: 'b', events })
+  assert.equal(second.accepted, 0)
+  assert.equal(second.duplicates, 2)
+  assert.equal(second.rejected, 0, 'replay must report 0 rejected, not a negative count')
+  assert.equal(second.cursor, first.cursor, 'cursor must not advance on a replay')
+  assert.equal(store.status().rejected, 0, 'store counters must stay non-negative')
+  assert.equal(store.status().duplicates, 2)
+
+  // 批内重复与已存在重复混在一起时，两个计数都不能互相污染
+  const mixed = store.publish({ batchId: 'c', events: [{ id: 'a', type: 'cost:event' }, { id: 'c', type: 'cost:event' }, { id: 'c', type: 'cost:event' }, { id: '', type: 'cost:event' }] })
+  assert.equal(mixed.accepted, 1)
+  assert.equal(mixed.duplicates, 2)
+  assert.equal(mixed.rejected, 1, 'only the malformed entry counts as rejected')
 })
 
 test('relay: relayHandlers rejects a store without publish/status', () => {
