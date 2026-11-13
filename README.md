@@ -39,7 +39,7 @@
 - 对端 MAJOR 更低 → `remote-too-old` → 自动降级；
 - 同 MAJOR → 取双方方法交集 + 公共 minor 裁剪。
 
-## 3. 方法表（1.0）
+## 3. 方法表（1.1）
 
 | 方法 | 用途 | 契约版本 |
 |---|---|---|
@@ -52,6 +52,69 @@
 | `fang.decision.resolve` | 决策中心处理票 | 1.0 |
 | `fang.session.list` | 会话目录 | 1.0 |
 | `fang.orchestrator.status` | 编排器状态 | 1.0 |
+| `fang.relay.publish` | **批量投递回流事件**（按 `event.id` 幂等，返回回执与游标） | 1.1 |
+| `fang.relay.status` | **读取对端回流状态**（对端自报 peer/cursor/累计计数） | 1.1 |
+
+### 3.1 回流接口（1.1 新增）
+
+房主成本总线产生三类事件（`cost:event` / `cost:degraded` / `cost:substitution`），
+需要**单向**投递给瓮城。1.1 之前方法表只有请求-响应式的 fork/decision/session，
+缺一个批量、可去重、有回执的入口，因此新增两个方法：
+
+```js
+// 请求
+{ "method": "fang.relay.publish",
+  "params": { "batchId": "b-1", "taskId": "task_1",
+              "events": [ { "id": "evt-1", "type": "cost:event", "at": 1730000000000,
+                            "payload": { "kind": "ledger", … } } ] } }
+
+// 响应 result
+{ "ok": true, "batchId": "b-1", "accepted": 1, "duplicates": 0, "rejected": 0,
+  "cursor": 1, "acceptedIds": ["evt-1"], "peer": "dsh-fang-bundle", "at": 1730000000000 }
+```
+
+规则（服务端必须遵守，客户端据此对账）：
+
+1. **幂等**：同一个 `event.id` 重复投递只接受一次，其余计入 `duplicates`，**不报错**；
+2. **有界**：单批 ≤ `RELAY_LIMITS.maxBatch`（128），单事件 ≤ 32 KB，整批 ≤ 512 KB；
+   超限是协议错误（`relay-events-invalid`），**不静默截断**；
+3. **不丢账**：非法条目计入 `rejected` 并回到 `fang.relay.status().lastErrors`（有界）；
+4. **游标**：`cursor` 单调递增，调用方可据此判断是否漏投；
+5. **peer 自报**：`peer` 是接收端自己声明的标识（如 `contract-server` / `dsh-fang-bundle`），
+   **不参与鉴权**，只用于房主侧记录“对端是谁”。
+
+服务端（瓮城侧）挂载：
+
+```js
+import { createRelayContractServer } from '@twinsearth/dsh-fang-contract'
+
+const { server, store } = createRelayContractServer({
+  role: 'mother', instanceId: 'fang-mother-1',
+  peerLabel: 'dsh-fang-bundle',      // 自报标识
+})
+// 与普通服务端一样挂 /fang/api/contract/{hello,invoke,health}
+```
+
+客户端（房主侧）：
+
+```js
+const receipt = await client.publishRelay({ batchId: 'b-1', events })
+const relay = await client.relayStatus()
+// relay.result.peer / relay.result.cursor / relay.result.accepted
+```
+
+**可用性判定**：1.0 的对端在 `hello` 里不会宣告这两个方法，
+`negotiate()` 会按公共 minor 把它们裁掉；调用方看到方法集里没有
+`fang.relay.publish` 就应如实报“回流不可用”，**不得**重试成假成功。
+
+### 3.2 兼容矩阵
+
+| 房主 contract | 瓮城 contract | `hello` 协商 | 回流 |
+|---|---|---|---|
+| 1.1 | 1.1 | `compatible`，方法含 relay | ✅ |
+| 1.1 | 1.0 | `compatible`，relay 方法被裁剪 | ❌ 显式不可用 |
+| 1.0 | 1.1 | `compatible`，relay 方法被裁剪 | ❌ 老客户端不调用 |
+| 1.x | 0.9（legacy） | `fallback: legacy` | ❌ legacy 无此方法 |
 
 信封：
 
@@ -154,4 +217,19 @@ const spawned = await client.spawnFork({ title: 'SuperAgent …', env: {…} })
 | 3.1.14 | 3.2.2 | 未接入（直连服务键） |
 | **3.1.15** | **3.2.3** | **1.0.x**（local/http/file/legacy） |
 | 3.2.x | 3.2.x+ | 1.x 向后兼容 |
+| 待接 1.1 | **3.3.1**（M5 回流） | **1.1.x**（+ `fang.relay.*`） |
 | 4.0 规划 | 4.0 规划 | 2.0（双写迁移） |
+
+## 9. 变更记录
+
+### 1.1.0（2026-11-13）
+
+- 新增回流方法 `fang.relay.publish` / `fang.relay.status` 与能力 `event-relay`；
+- 新增 `createRelayStore` / `validateRelayEvents` / `relayHandlers` / `createRelayContractServer`；
+- 传输层回灌房主侧已验证的加固：逐调用 `timeoutMs`/`meta` 透传、HTTP 定时器 `unref`、
+  file 回执/请求文件的有界重试清理（Windows EPERM）、`httpHeaders` 可选透传；
+- 方法版本裁剪规则不变：1.0 对端不会宣告 1.1 方法，`negotiate()` 自动裁剪。
+
+### 1.0.0（2026-11-11）
+
+- 首个版本化契约：方法表、信封、hello 协商、local/http/file/legacy 四级传输。

@@ -1,9 +1,17 @@
 {
   "name": "@twinsearth/dsh-fang-contract",
-  "version": "1.0.0",
-  "description": "dsh-Fang（瓮城）与 dsh-Master（房主）的独立版本化互联契约 SDK：版本协商、本地服务/HTTP/文件兜底传输与旧版服务键回退。",
+  "version": "1.1.0",
+  "description": "dsh-Fang（瓮城）与 dsh-Master（房主）的独立版本化互联契约 SDK：版本协商、本地/HTTP/文件兜底传输与旧版服务键回退。",
   "type": "module",
   "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TwinsEarth/dsh-fang-contract.git"
+  },
+  "homepage": "https://github.com/TwinsEarth/dsh-fang-contract#readme",
+  "bugs": {
+    "url": "https://github.com/TwinsEarth/dsh-fang-contract/issues"
+  },
   "exports": {
     ".": "./src/index.js",
     "./package.json": "./package.json"
